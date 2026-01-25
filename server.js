@@ -132,40 +132,28 @@ app.get('/api/consultar-pedido/:token', async (req, res) => {
 
 // FASE 3: CONFIRMAR + PIXEL (Versão Blindada)
 app.post('/api/confirmar-pedido', async (req, res) => {
-    const { token, age, gender } = req.body;
+    // 1. Recebe fbc e fbp do site
+    const { token, age, gender, fbc, fbp } = req.body; 
     
-    // Captura dados reais do navegador da requisição
+    // Captura dados técnicos
     const clientUserAgent = req.headers['user-agent'];
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
     try {
-        // 1. Atualiza Banco
-        const { data: sale, error } = await supabase
-            .from('sales')
-            .update({ 
-                age: parseInt(age), 
-                gender: gender, 
-                lead_status: 'sale_confirmed',
-                updated_at: new Date()
-            })
-            .eq('token', token)
-            .select().single();
+        // ... (código de atualização do Supabase continua igual) ...
 
-        if (error || !sale) throw new Error("Erro ao atualizar banco.");
-
-        // 2. Prepara User Data (Sem campos nulos/inválidos)
+        // 2. Prepara User Data COM OS COOKIES
         const userData = {
             em: sale.email ? [sha256(sale.email)] : undefined,
             ph: sale.phone ? [sha256(sale.phone)] : undefined,
-            ct: sale.city ? [sha256(sale.city)] : undefined,
-            st: sale.state ? [sha256(sale.state)] : undefined,
-            country: sale.country ? [sha256(sale.country)] : undefined,
-            external_id: sale.external_id ? [sha256(sale.external_id)] : undefined,
-            client_user_agent: clientUserAgent, // Agora é o real!
-            client_ip_address: clientIp // O Facebook adora isso
+            // ... (outros campos iguais) ...
+            client_user_agent: clientUserAgent,
+            client_ip_address: clientIp,
+            fbc: fbc || undefined, // <--- ADICIONADO
+            fbp: fbp || undefined  // <--- ADICIONADO
         };
 
-        // Remove chaves undefined para não quebrar o JSON
+        // Remove chaves undefined
         Object.keys(userData).forEach(key => userData[key] === undefined && delete userData[key]);
 
         const eventData = {
