@@ -195,6 +195,40 @@ app.post('/api/send-media', upload.single('file'), async (req, res) => {
     }
 });
 
+// --- FASE 2: ROTA PARA O SEU SITE CONSULTAR (API JSON) ---
+app.get('/api/consultar-pedido/:token', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: "Erro interno (DB)" });
+    
+    const { token } = req.params;
+
+    try {
+        // 1. Busca a venda pelo Token Seguro
+        const { data, error } = await supabase
+            .from('sales')
+            .select('*')
+            .eq('token', token)
+            .single();
+
+        if (error || !data) {
+            return res.status(404).json({ success: false, error: "Pedido não encontrado ou expirado." });
+        }
+
+        // 2. Retorna apenas os dados seguros para o seu site exibir
+        res.json({
+            success: true,
+            full_name: data.full_name,
+            product_name: data.product_name,
+            value: data.value,
+            currency: data.currency,
+            status: data.lead_status // 'sale_created' ou 'sale_confirmed'
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Erro ao processar." });
+    }
+});
+
 // Dynamic Port for Railway
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
