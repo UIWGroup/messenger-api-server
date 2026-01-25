@@ -17,8 +17,8 @@ app.use(cors());
 app.use(express.json());
 
 // --- CONFIGURAÇÕES FACEBOOK ---
-const FB_PIXEL_ID = '1540829440322110';
-const FB_ACCESS_TOKEN = 'EAAV5YE9zKj4BQk967JHfeOHukRvMA7lLgUq4IsRInxMMmZBPyWeia5gxRd9jor8lvEVLOENHQ5mFhzSGaQv0VaZA5GdCE0CfHWiZAmKFtNV0kRF3MG0dk8PcQmCS2k1odO6ceqo2XMZBLUaBzkcvwnOXEwi7l8OqtPgMYXfsfOoNis0dAvZAvRk3dF8Rpk9nwUBrtM8ZC87IipnoBwZBpVGY4DEMAZDZD';
+const FB_PIXEL_ID = '1412330650434939'; // O ID do novo Pixel do Business
+const FB_ACCESS_TOKEN = 'EAAFh2fThjegBQkFZAff8Mh4RNuzypedBzFCWb5fmLwJWWWt3pTuXdBprg91xYWcuWiBAtw5BT9mgQycqhewLh7mzbVoyjEJDyzJUvLdR5BYGyGhAfR0LmBUC8BpfyvO0NF950vRnIzDeZBEZB8pZBZCE8IazPTNZAtCMaj6uglgwtieILqHL0ZCRAb9B6maDI7WuwZDZD';
 
 // Railway Uploads
 const upload = multer({ dest: '/tmp/' });
