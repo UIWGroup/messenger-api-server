@@ -24,11 +24,10 @@ const DB_PATH = path.join(__dirname, 'db.json');
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
-// 👉 NOVO: Configuração da Caixa Forte (Supabase)
-// Certifique-se de adicionar SUPABASE_URL e SUPABASE_ANON_KEY no Railway!
+// 👉 Configuração da Caixa Forte (Supabase)
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
-// Inicializa o cliente apenas se as chaves existirem (para evitar crash se esquecer a var)
+// Inicializa o cliente apenas se as chaves existirem
 const supabase = (supabaseUrl && supabaseKey) 
     ? createClient(supabaseUrl, supabaseKey) 
     : null;
@@ -57,7 +56,6 @@ async function getClientName(psid) {
 }
 
 // --- 1. LEGAL PAGES (REQUIRED FOR LIVE MODE) ---
-// (Mantido igual ao original)
 app.get('/privacy', (req, res) => {
     res.send(`<html><body><h1>Privacy Policy</h1><p>NoviChat Privacy Policy...</p></body></html>`);
 });
@@ -71,7 +69,6 @@ app.get('/data-deletion', (req, res) => {
 });
 
 // --- 2. WEBHOOK MANAGEMENT ---
-// (Mantido igual ao original)
 app.get('/webhook', (req, res) => {
     if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
         res.status(200).send(req.query['hub.challenge']);
@@ -100,8 +97,7 @@ app.post('/webhook', async (req, res) => {
 
 // --- 3. EXTENSION API ---
 
-// 🚀 ROTA FASE 1: REGISTRAR VENDA (NOVO)
-// Essa é a rota que sua extensão vai chamar para salvar no Supabase
+// 🚀 ROTA FASE 1: REGISTRAR VENDA (EXTENSÃO -> SUPABASE)
 app.post('/api/register-sale', async (req, res) => {
     if (!supabase) return res.status(500).json({ error: "Servidor mal configurado (Supabase Missing)" });
 
@@ -169,7 +165,6 @@ app.get('/api/get-psid-by-name', (req, res) => {
 });
 
 app.post('/api/send-media', upload.single('file'), async (req, res) => {
-    // ... (Mantivemos sua lógica de envio de mídia intacta) ...
     const { recipientId, type } = req.body;
     const file = req.file;
 
@@ -226,6 +221,40 @@ app.get('/api/consultar-pedido/:token', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Erro ao processar." });
+    }
+});
+
+// --- ROTA DE CONFIRMAÇÃO FINAL + ATUALIZAÇÃO ---
+app.post('/api/confirmar-pedido', async (req, res) => {
+    const { token, age, gender } = req.body;
+
+    if (!token) return res.status(400).json({ error: "Token obrigatório" });
+
+    try {
+        // 1. Atualiza os dados no Supabase e muda status para 'confirmed'
+        const { data, error } = await supabase
+            .from('sales')
+            .update({ 
+                age: parseInt(age), 
+                gender: gender,
+                lead_status: 'sale_confirmed',
+                updated_at: new Date()
+            })
+            .eq('token', token)
+            .select() // Retorna o dado atualizado para usarmos no Pixel
+            .single();
+
+        if (error) throw error;
+
+        // 2. AQUI ENTRARÁ O DISPARO DO PIXEL (FASE 3)
+        // Por enquanto, vamos apenas logar que funcionou
+        console.log("✅ Venda Confirmada e Enriquecida:", data.full_name);
+
+        res.json({ success: true, message: "Dados atualizados!" });
+
+    } catch (err) {
+        console.error("Erro ao confirmar:", err);
+        res.status(500).json({ error: "Erro ao processar confirmação." });
     }
 });
 
