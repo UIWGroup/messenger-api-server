@@ -156,14 +156,15 @@ app.post('/api/confirmar-pedido', async (req, res) => {
         // Remove chaves undefined
         Object.keys(userData).forEach(key => userData[key] === undefined && delete userData[key]);
 
-        const eventData = {
+      const eventData = {
+            test_event_code: 'TEST79867', // <--- ADICIONE ESTA LINHA COM O SEU CÓDIGO
             data: [{
                 event_name: 'Purchase',
                 event_time: Math.floor(Date.now() / 1000),
                 event_id: sale.event_id,
                 event_source_url: 'https://helpvitalllc.com/confirmed',
                 action_source: 'website',
-                user_data: userData,
+                user_data: userData, // Aqui estão indo o IP e User Agent
                 custom_data: {
                     value: parseFloat(sale.value),
                     currency: sale.currency || 'USD',
