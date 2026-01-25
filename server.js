@@ -16,7 +16,7 @@ app.set('trust proxy', true); // Necessário para pegar o IP real no Railway
 app.use(cors());
 app.use(express.json());
 
-// --- CONFIGURAÇÕES FACEBOOK (Pixel do Business) ---
+// --- CONFIGURAÇÕES FACEBOOK (PRODUÇÃO) ---
 const FB_PIXEL_ID = '1412330650434939'; 
 const FB_ACCESS_TOKEN = 'EAAFh2fThjegBQkFZAff8Mh4RNuzypedBzFCWb5fmLwJWWWt3pTuXdBprg91xYWcuWiBAtw5BT9mgQycqhewLh7mzbVoyjEJDyzJUvLdR5BYGyGhAfR0LmBUC8BpfyvO0NF950vRnIzDeZBEZB8pZBZCE8IazPTNZAtCMaj6uglgwtieILqHL0ZCRAb9B6maDI7WuwZDZD';
 
@@ -130,7 +130,7 @@ app.get('/api/consultar-pedido/:token', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Erro" }); }
 });
 
-// FASE 3: CONFIRMAR + PIXEL (MODO DE TESTE ATIVADO)
+// FASE 3: CONFIRMAR + PIXEL (Versão Oficial de Produção)
 app.post('/api/confirmar-pedido', async (req, res) => {
     // 1. Recebe Token + Dados + Cookies (fbc/fbp)
     const { token, age, gender, fbc, fbp } = req.body;
@@ -172,10 +172,7 @@ app.post('/api/confirmar-pedido', async (req, res) => {
         Object.keys(userData).forEach(key => userData[key] === undefined && delete userData[key]);
 
         const eventData = {
-            // 👇👇👇 COLE SEU CÓDIGO DE TESTE AQUI (EX: 'TEST12345') 👇👇👇
-            test_event_code: 'TEST79867', 
-            // 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆
-            
+            // MODO DE TESTE REMOVIDO: Agora é pra valer! 🚀
             data: [{
                 event_name: 'Purchase',
                 event_time: Math.floor(Date.now() / 1000),
@@ -193,15 +190,15 @@ app.post('/api/confirmar-pedido', async (req, res) => {
             }]
         };
 
-        console.log(`📡 Enviando evento de TESTE para Pixel: ${FB_PIXEL_ID}...`);
+        console.log(`📡 Enviando evento REAL para Pixel: ${FB_PIXEL_ID}...`);
         
         await axios.post(
             `https://graph.facebook.com/v19.0/${FB_PIXEL_ID}/events?access_token=${FB_ACCESS_TOKEN}`,
             eventData
         );
 
-        console.log("✅ PIXEL DE TESTE DISPARADO COM SUCESSO! (Status 200)");
-        await supabase.from('sales').update({ pixel_status: 'sent_test' }).eq('id', sale.id);
+        console.log("✅ PIXEL DISPARADO COM SUCESSO! (Status 200)");
+        await supabase.from('sales').update({ pixel_status: 'sent' }).eq('id', sale.id);
         res.json({ success: true });
 
     } catch (err) {
