@@ -1,5 +1,7 @@
+// 1. Configurações (Sempre a primeira linha)
 require('dotenv').config(); 
-const app = express();
+
+// 2. Importações (Devem vir antes de serem usadas)
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -7,9 +9,10 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
-
-// 👉 NOVO: Importações do Supabase (Fase 1)
 const { createClient } = require('@supabase/supabase-js');
+
+// 3. Inicialização (Só aqui você pode usar as variáveis acima)
+const app = express(); // <--- Agora o 'express' já existe e não dará erro
 app.use(cors());
 app.use(express.json());
 
