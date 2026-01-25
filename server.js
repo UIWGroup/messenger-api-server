@@ -16,8 +16,8 @@ app.set('trust proxy', true); // Necessário para pegar o IP real no Railway
 app.use(cors());
 app.use(express.json());
 
-// --- CONFIGURAÇÕES FACEBOOK ---
-const FB_PIXEL_ID = '1412330650434939'; // O ID do novo Pixel do Business
+// --- CONFIGURAÇÕES FACEBOOK (Atualizado com seu Pixel Novo) ---
+const FB_PIXEL_ID = '1412330650434939'; 
 const FB_ACCESS_TOKEN = 'EAAFh2fThjegBQkFZAff8Mh4RNuzypedBzFCWb5fmLwJWWWt3pTuXdBprg91xYWcuWiBAtw5BT9mgQycqhewLh7mzbVoyjEJDyzJUvLdR5BYGyGhAfR0LmBUC8BpfyvO0NF950vRnIzDeZBEZB8pZBZCE8IazPTNZAtCMaj6uglgwtieILqHL0ZCRAb9B6maDI7WuwZDZD';
 
 // Railway Uploads
@@ -41,7 +41,7 @@ if (fs.existsSync(DB_PATH)) {
 
 // --- HELPERS ---
 function sha256(value) {
-    if (!value) return undefined; // Retorna undefined para o JSON.stringify remover o campo
+    if (!value) return undefined; 
     return crypto.createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
 }
 
@@ -130,41 +130,56 @@ app.get('/api/consultar-pedido/:token', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Erro" }); }
 });
 
-// FASE 3: CONFIRMAR + PIXEL (Versão Blindada)
+// FASE 3: CONFIRMAR + PIXEL (Versão Final Completa)
 app.post('/api/confirmar-pedido', async (req, res) => {
-    // 1. Recebe fbc e fbp do site
-    const { token, age, gender, fbc, fbp } = req.body; 
+    // 1. Recebe Token + Dados + Cookies (fbc/fbp)
+    const { token, age, gender, fbc, fbp } = req.body;
     
-    // Captura dados técnicos
+    // Captura dados técnicos do servidor
     const clientUserAgent = req.headers['user-agent'];
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
     try {
-        // ... (código de atualização do Supabase continua igual) ...
+        // 2. ATUALIZA O BANCO E "DEFINE" QUEM É A 'sale'
+        const { data: sale, error } = await supabase
+            .from('sales')
+            .update({ 
+                age: parseInt(age), 
+                gender: gender, 
+                lead_status: 'sale_confirmed',
+                updated_at: new Date()
+            })
+            .eq('token', token)
+            .select().single();
 
-        // 2. Prepara User Data COM OS COOKIES
+        if (error || !sale) throw new Error("Erro ao atualizar banco.");
+
+        // 3. Prepara User Data (Agora 'sale' existe!)
         const userData = {
             em: sale.email ? [sha256(sale.email)] : undefined,
             ph: sale.phone ? [sha256(sale.phone)] : undefined,
-            // ... (outros campos iguais) ...
+            ct: sale.city ? [sha256(sale.city)] : undefined,
+            st: sale.state ? [sha256(sale.state)] : undefined,
+            country: sale.country ? [sha256(sale.country)] : undefined,
+            external_id: sale.external_id ? [sha256(sale.external_id)] : undefined,
             client_user_agent: clientUserAgent,
             client_ip_address: clientIp,
-            fbc: fbc || undefined, // <--- ADICIONADO
-            fbp: fbp || undefined  // <--- ADICIONADO
+            fbc: fbc || undefined, // Aqui entram os cookies
+            fbp: fbp || undefined
         };
 
         // Remove chaves undefined
         Object.keys(userData).forEach(key => userData[key] === undefined && delete userData[key]);
 
-      const eventData = {
-            test_event_code: 'TEST79867', // <--- ADICIONE ESTA LINHA COM O SEU CÓDIGO
+        const eventData = {
+            // test_event_code: 'TEST79867', // <--- Descomente APENAS se for testar na hora
             data: [{
                 event_name: 'Purchase',
                 event_time: Math.floor(Date.now() / 1000),
                 event_id: sale.event_id,
                 event_source_url: 'https://helpvitalllc.com/confirmed',
                 action_source: 'website',
-                user_data: userData, // Aqui estão indo o IP e User Agent
+                user_data: userData,
                 custom_data: {
                     value: parseFloat(sale.value),
                     currency: sale.currency || 'USD',
@@ -187,11 +202,8 @@ app.post('/api/confirmar-pedido', async (req, res) => {
         res.json({ success: true });
 
     } catch (err) {
-        // Log Detalhado do Erro do Facebook
         const fbError = err.response ? JSON.stringify(err.response.data) : err.message;
         console.error(`❌ ERRO NO PIXEL: ${fbError}`);
-        
-        // Retorna sucesso para o site não travar, mas loga o erro
         res.json({ success: true, warning: "Salvo no banco, erro no pixel." }); 
     }
 });
