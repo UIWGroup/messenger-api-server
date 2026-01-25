@@ -16,7 +16,7 @@ app.set('trust proxy', true); // Necessário para pegar o IP real no Railway
 app.use(cors());
 app.use(express.json());
 
-// --- CONFIGURAÇÕES FACEBOOK (Atualizado com seu Pixel Novo) ---
+// --- CONFIGURAÇÕES FACEBOOK (Pixel do Business) ---
 const FB_PIXEL_ID = '1412330650434939'; 
 const FB_ACCESS_TOKEN = 'EAAFh2fThjegBQkFZAff8Mh4RNuzypedBzFCWb5fmLwJWWWt3pTuXdBprg91xYWcuWiBAtw5BT9mgQycqhewLh7mzbVoyjEJDyzJUvLdR5BYGyGhAfR0LmBUC8BpfyvO0NF950vRnIzDeZBEZB8pZBZCE8IazPTNZAtCMaj6uglgwtieILqHL0ZCRAb9B6maDI7WuwZDZD';
 
@@ -130,7 +130,7 @@ app.get('/api/consultar-pedido/:token', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Erro" }); }
 });
 
-// FASE 3: CONFIRMAR + PIXEL (Versão Final Completa)
+// FASE 3: CONFIRMAR + PIXEL (MODO DE TESTE ATIVADO)
 app.post('/api/confirmar-pedido', async (req, res) => {
     // 1. Recebe Token + Dados + Cookies (fbc/fbp)
     const { token, age, gender, fbc, fbp } = req.body;
@@ -140,7 +140,7 @@ app.post('/api/confirmar-pedido', async (req, res) => {
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
     try {
-        // 2. ATUALIZA O BANCO E "DEFINE" QUEM É A 'sale'
+        // 2. ATUALIZA O BANCO
         const { data: sale, error } = await supabase
             .from('sales')
             .update({ 
@@ -154,7 +154,7 @@ app.post('/api/confirmar-pedido', async (req, res) => {
 
         if (error || !sale) throw new Error("Erro ao atualizar banco.");
 
-        // 3. Prepara User Data (Agora 'sale' existe!)
+        // 3. Prepara User Data
         const userData = {
             em: sale.email ? [sha256(sale.email)] : undefined,
             ph: sale.phone ? [sha256(sale.phone)] : undefined,
@@ -164,7 +164,7 @@ app.post('/api/confirmar-pedido', async (req, res) => {
             external_id: sale.external_id ? [sha256(sale.external_id)] : undefined,
             client_user_agent: clientUserAgent,
             client_ip_address: clientIp,
-            fbc: fbc || undefined, // Aqui entram os cookies
+            fbc: fbc || undefined,
             fbp: fbp || undefined
         };
 
@@ -172,7 +172,10 @@ app.post('/api/confirmar-pedido', async (req, res) => {
         Object.keys(userData).forEach(key => userData[key] === undefined && delete userData[key]);
 
         const eventData = {
-            // test_event_code: 'TEST79867', // <--- Descomente APENAS se for testar na hora
+            // 👇👇👇 COLE SEU CÓDIGO DE TESTE AQUI (EX: 'TEST12345') 👇👇👇
+            test_event_code: 'TEST79867', 
+            // 👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆👆
+            
             data: [{
                 event_name: 'Purchase',
                 event_time: Math.floor(Date.now() / 1000),
@@ -190,15 +193,15 @@ app.post('/api/confirmar-pedido', async (req, res) => {
             }]
         };
 
-        console.log(`📡 Enviando evento para Pixel: ${FB_PIXEL_ID}...`);
+        console.log(`📡 Enviando evento de TESTE para Pixel: ${FB_PIXEL_ID}...`);
         
         await axios.post(
             `https://graph.facebook.com/v19.0/${FB_PIXEL_ID}/events?access_token=${FB_ACCESS_TOKEN}`,
             eventData
         );
 
-        console.log("✅ PIXEL DISPARADO COM SUCESSO! (Status 200)");
-        await supabase.from('sales').update({ pixel_status: 'sent' }).eq('id', sale.id);
+        console.log("✅ PIXEL DE TESTE DISPARADO COM SUCESSO! (Status 200)");
+        await supabase.from('sales').update({ pixel_status: 'sent_test' }).eq('id', sale.id);
         res.json({ success: true });
 
     } catch (err) {
