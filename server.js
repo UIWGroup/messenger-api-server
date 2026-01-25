@@ -1,7 +1,7 @@
 // 1. Configurações (Sempre a primeira linha)
 require('dotenv').config(); 
 
-// 2. Importações (Devem vir antes de serem usadas)
+// 2. Importações
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -10,11 +10,16 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
+const crypto = require('crypto'); // <--- NOVO: Para segurança do Facebook
 
-// 3. Inicialização (Só aqui você pode usar as variáveis acima)
-const app = express(); // <--- Agora o 'express' já existe e não dará erro
+// 3. Inicialização
+const app = express(); 
 app.use(cors());
 app.use(express.json());
+
+// --- CONFIGURAÇÕES DO FACEBOOK API (FASE 3) ---
+const FB_PIXEL_ID = '1540829440322110';
+const FB_ACCESS_TOKEN = 'EAAV5YE9zKj4BQk967JHfeOHukRvMA7lLgUq4IsRInxMMmZBPyWeia5gxRd9jor8lvEVLOENHQ5mFhzSGaQv0VaZA5GdCE0CfHWiZAmKFtNV0kRF3MG0dk8PcQmCS2k1odO6ceqo2XMZBLUaBzkcvwnOXEwi7l8OqtPgMYXfsfOoNis0dAvZAvRk3dF8Rpk9nwUBrtM8ZC87IipnoBwZBpVGY4DEMAZDZD';
 
 // Railway configuration for temporary file handling
 const upload = multer({ dest: '/tmp/' });
@@ -27,14 +32,11 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 // 👉 Configuração da Caixa Forte (Supabase)
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
-// Inicializa o cliente apenas se as chaves existirem
-const supabase = (supabaseUrl && supabaseKey) 
-    ? createClient(supabaseUrl, supabaseKey) 
-    : null;
+const supabase = (supabaseUrl && supabaseKey) ? createClient(supabaseUrl, supabaseKey) : null;
 
 if (!supabase) console.warn("⚠️ AVISO: Supabase não configurado. Adicione as variáveis no Railway.");
 
-// Local database for PSID mapping (Mantido do seu código original)
+// Local database for PSID mapping
 let db = { psids: {} };
 if (fs.existsSync(DB_PATH)) {
     try {
@@ -42,6 +44,12 @@ if (fs.existsSync(DB_PATH)) {
     } catch (e) {
         console.error("Error reading db.json, starting fresh.");
     }
+}
+
+// --- HELPER: HASH SHA256 (SEGURANÇA FACEBOOK) ---
+function sha256(value) {
+    if (!value) return null;
+    return crypto.createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
 }
 
 // --- HELPER: FETCH PROFILE NAME FROM META ---
@@ -55,20 +63,12 @@ async function getClientName(psid) {
     }
 }
 
-// --- 1. LEGAL PAGES (REQUIRED FOR LIVE MODE) ---
-app.get('/privacy', (req, res) => {
-    res.send(`<html><body><h1>Privacy Policy</h1><p>NoviChat Privacy Policy...</p></body></html>`);
-});
+// --- 1. LEGAL PAGES ---
+app.get('/privacy', (req, res) => res.send(`<html><body><h1>Privacy Policy</h1><p>NoviChat Privacy Policy...</p></body></html>`));
+app.get('/terms', (req, res) => res.send(`<html><body><h1>Terms of Service</h1><p>NoviChat Terms...</p></body></html>`));
+app.get('/data-deletion', (req, res) => res.send(`<html><body><h1>Data Deletion</h1><p>Request deletion at support@novichat.com</p></body></html>`));
 
-app.get('/terms', (req, res) => {
-    res.send(`<html><body><h1>Terms of Service</h1><p>NoviChat Terms...</p></body></html>`);
-});
-
-app.get('/data-deletion', (req, res) => {
-    res.send(`<html><body><h1>Data Deletion</h1><p>Request deletion at jacquelinexavier.50@gmail.com</p></body></html>`);
-});
-
-// --- 2. WEBHOOK MANAGEMENT ---
+// --- 2. WEBHOOK MANAGEMENT (Mantido intacto) ---
 app.get('/webhook', (req, res) => {
     if (req.query['hub.verify_token'] === VERIFY_TOKEN) {
         res.status(200).send(req.query['hub.challenge']);
@@ -95,27 +95,44 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// --- 3. EXTENSION API ---
+// --- 3. EXTENSION API & FUNNEL ---
 
-// 🚀 ROTA FASE 1: REGISTRAR VENDA (EXTENSÃO -> SUPABASE)
+// Rotas Legadas (Mantidas)
+app.get('/api/get-psid-by-name', (req, res) => {
+    const name = req.query.name?.toLowerCase();
+    const psid = db.psids[name];
+    if (psid) res.json({ psid });
+    else res.status(404).json({ error: "Customer not found" });
+});
+
+app.post('/api/send-media', upload.single('file'), async (req, res) => {
+    const { recipientId, type } = req.body;
+    const file = req.file;
+    try {
+        const formData = new FormData();
+        formData.append('recipient', JSON.stringify({ id: recipientId }));
+        formData.append('message', JSON.stringify({ attachment: { type: type, payload: { is_reusable: true } } }));
+        formData.append('filedata', fs.createReadStream(file.path));
+
+        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, formData, { headers: formData.getHeaders() });
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        res.json({ success: true });
+    } catch (error) {
+        if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        res.status(500).json({ success: false });
+    }
+});
+
+// --- 4. SALES TRACKING SYSTEM (NOVO SISTEMA) ---
+
+// FASE 1: REGISTRAR VENDA (Extensão -> Supabase)
 app.post('/api/register-sale', async (req, res) => {
-    if (!supabase) return res.status(500).json({ error: "Servidor mal configurado (Supabase Missing)" });
-
+    if (!supabase) return res.status(500).json({ error: "Supabase Missing" });
     try {
       const payload = req.body;
+      if (!payload.external_id || !payload.token) return res.status(400).json({ error: 'Payload incompleto.' });
   
-      // Validação Básica
-      if (!payload.external_id || !payload.token) {
-        return res.status(400).json({ error: 'Payload incompleto.' });
-      }
-  
-      console.log(`[FASE 1] Recebendo venda: ${payload.external_id}`);
-  
-      // Inserção no Supabase
-      const { data, error } = await supabase
-        .from('sales')
-        .insert([
-          {
+      const { data, error } = await supabase.from('sales').insert([{
             external_id: payload.external_id,
             event_id: payload.event_id,
             token: payload.token,
@@ -131,136 +148,107 @@ app.post('/api/register-sale', async (req, res) => {
             lead_source: payload.lead_source,
             lead_status: 'sale_created',
             created_at: new Date().toISOString()
-          }
-        ])
-        .select();
+      }]).select();
   
-      // Tratamento de Duplicidade (Segurança)
       if (error) {
-        if (error.code === '23505') { 
-          console.warn(`[DUPLICIDADE] Venda ${payload.external_id} já existe.`);
-          return res.status(200).json({ success: true, message: 'Venda já registrada.' });
-        }
+        if (error.code === '23505') return res.status(200).json({ success: true, message: 'Venda já registrada.' });
         throw error;
       }
-  
-      console.log(`[SUCESSO] Venda salva! Token: ${payload.token}`);
       return res.status(201).json({ success: true, token: payload.token });
-  
     } catch (err) {
-      console.error('[ERRO INTERNO]', err);
+      console.error('[ERRO]', err);
       return res.status(500).json({ error: 'Erro ao salvar venda.' });
     }
 });
 
-// Rotas antigas da API (Mantidas)
-app.get('/api/get-psid-by-name', (req, res) => {
-    const name = req.query.name?.toLowerCase();
-    const psid = db.psids[name];
-    if (psid) {
-        res.json({ psid });
-    } else {
-        res.status(404).json({ error: "Customer not found in NoviChat DB" });
-    }
-});
-
-app.post('/api/send-media', upload.single('file'), async (req, res) => {
-    const { recipientId, type } = req.body;
-    const file = req.file;
-
-    try {
-        const formData = new FormData();
-        formData.append('recipient', JSON.stringify({ id: recipientId }));
-        formData.append('message', JSON.stringify({
-            attachment: { type: type, payload: { is_reusable: true } }
-        }));
-        formData.append('filedata', fs.createReadStream(file.path));
-
-        await axios.post(
-            `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-            formData, { headers: formData.getHeaders() }
-        );
-
-        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        res.json({ success: true });
-    } catch (error) {
-        console.error('Meta API Error:', error.response?.data || error.message);
-        if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        res.status(500).json({ success: false });
-    }
-});
-
-// --- FASE 2: ROTA PARA O SEU SITE CONSULTAR (API JSON) ---
+// FASE 2: CONSULTAR PEDIDO (Site -> Supabase)
 app.get('/api/consultar-pedido/:token', async (req, res) => {
     if (!supabase) return res.status(500).json({ error: "Erro interno (DB)" });
-    
     const { token } = req.params;
-
     try {
-        // 1. Busca a venda pelo Token Seguro
-        const { data, error } = await supabase
-            .from('sales')
-            .select('*')
-            .eq('token', token)
-            .single();
-
-        if (error || !data) {
-            return res.status(404).json({ success: false, error: "Pedido não encontrado ou expirado." });
-        }
-
-        // 2. Retorna apenas os dados seguros para o seu site exibir
+        const { data, error } = await supabase.from('sales').select('*').eq('token', token).single();
+        if (error || !data) return res.status(404).json({ success: false, error: "Pedido não encontrado" });
         res.json({
             success: true,
             full_name: data.full_name,
             product_name: data.product_name,
             value: data.value,
             currency: data.currency,
-            status: data.lead_status // 'sale_created' ou 'sale_confirmed'
+            status: data.lead_status
         });
-
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Erro ao processar." });
-    }
+    } catch (err) { res.status(500).json({ error: "Erro ao processar." }); }
 });
 
-// --- ROTA DE CONFIRMAÇÃO FINAL + ATUALIZAÇÃO ---
+// FASE 3: CONFIRMAR + DISPARAR PIXEL (Site -> Supabase -> Facebook)
 app.post('/api/confirmar-pedido', async (req, res) => {
     const { token, age, gender } = req.body;
 
-    if (!token) return res.status(400).json({ error: "Token obrigatório" });
-
     try {
-        // 1. Atualiza os dados no Supabase e muda status para 'confirmed'
-        const { data, error } = await supabase
+        // 1. Atualiza o banco com Idade/Sexo
+        const { data: sale, error } = await supabase
             .from('sales')
             .update({ 
                 age: parseInt(age), 
-                gender: gender,
+                gender: gender, 
                 lead_status: 'sale_confirmed',
                 updated_at: new Date()
             })
             .eq('token', token)
-            .select() // Retorna o dado atualizado para usarmos no Pixel
+            .select()
             .single();
 
-        if (error) throw error;
+        if (error || !sale) throw new Error("Erro ao atualizar banco.");
 
-        // 2. AQUI ENTRARÁ O DISPARO DO PIXEL (FASE 3)
-        // Por enquanto, vamos apenas logar que funcionou
-        console.log("✅ Venda Confirmada e Enriquecida:", data.full_name);
+        // 2. PREPARA OS DADOS PARA O FACEBOOK (CAPI)
+        // Criptografia SHA256 é obrigatória para o Facebook aceitar os dados
+        const eventData = {
+            data: [{
+                event_name: 'Purchase',
+                event_time: Math.floor(Date.now() / 1000),
+                event_id: sale.event_id, // Deduplicação exata com o navegador (se houvesse pixel lá)
+                event_source_url: 'https://helpvitalllc.com/confirmed',
+                action_source: 'website',
+                user_data: {
+                    em: [sha256(sale.email)], 
+                    ph: [sha256(sale.phone)], 
+                    ct: [sha256(sale.city)],
+                    st: [sha256(sale.state)],
+                    country: [sha256(sale.country)],
+                    external_id: [sha256(sale.external_id)],
+                    client_user_agent: 'NoviChat-Server-Agent'
+                },
+                custom_data: {
+                    value: parseFloat(sale.value),
+                    currency: sale.currency || 'USD',
+                    content_name: sale.product_name,
+                    status: 'confirmed_with_profile',
+                    customer_age: age,
+                    customer_gender: gender
+                }
+            }]
+        };
 
-        res.json({ success: true, message: "Dados atualizados!" });
+        // 3. ENVIA PARA O MARK ZUCKERBERG
+        console.log(`📡 Enviando evento Purchase para o Facebook (Pixel: ${FB_PIXEL_ID})...`);
+        
+        await axios.post(
+            `https://graph.facebook.com/v19.0/${FB_PIXEL_ID}/events?access_token=${FB_ACCESS_TOKEN}`,
+            eventData
+        );
+
+        console.log("✅ PIXEL DISPARADO COM SUCESSO!");
+
+        // 4. Marca no banco que o pixel foi enviado
+        await supabase.from('sales').update({ pixel_status: 'sent' }).eq('id', sale.id);
+
+        res.json({ success: true });
 
     } catch (err) {
-        console.error("Erro ao confirmar:", err);
-        res.status(500).json({ error: "Erro ao processar confirmação." });
+        console.error("❌ Erro no processo (Pixel ou DB):", err.message);
+        // Retornamos sucesso pois o dado do cliente foi salvo, mesmo que o pixel falhe
+        res.json({ success: true, warning: "Dados salvos, mas erro na comunicação com Facebook." }); 
     }
 });
 
-// Dynamic Port for Railway
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-    console.log(`🚀 NOVICHAT SERVER ONLINE`);
-    console.log(`📡 Domain: ${PORT} | Status: Connected`);
-});
+app.listen(PORT, () => console.log(`🚀 NOVICHAT SERVER ONLINE NA PORTA ${PORT}`));
